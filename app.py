@@ -5,28 +5,29 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from torchvision import models
 from PIL import Image
 import cv2
-import matplotlib.pyplot as plt
-import os
 import math
+import base64
 
 app = Flask(__name__)
 
-# Load the Faster R-CNN model for object detection
+# Load the Faster R-CNN model
 model = fasterrcnn_resnet50_fpn(weights=True)
 model.eval()
 
+# Function to load the classification model
 def load_model(model_path):
     model = models.resnet50(weights=None)
     num_ftrs = model.fc.in_features
-    model.fc = torch.nn.Linear(num_ftrs, 7)
+    model.fc = torch.nn.Linear(num_ftrs, 7)  # Assuming 7 classes for classification
     state_dict = torch.load(model_path, map_location=torch.device('cpu'))
     model.load_state_dict(state_dict)
     model.eval()
     return model
 
 # Load the classification model
-classification_model = load_model('resnet50_model.pth')
+classification_model = load_model('resnet50_model.pth')  # Path to your classification model
 
+# Function to preprocess the input image
 def preprocess_image(image_path):
     transform = T.Compose([
         T.Resize((224, 224)),
@@ -36,18 +37,31 @@ def preprocess_image(image_path):
     image = Image.open(image_path).convert('RGB')
     return transform(image).unsqueeze(0)
 
+# Function to perform prediction
 def predict(model, image_tensor, class_names):
     with torch.no_grad():
         outputs = model(image_tensor)
         _, predicted = torch.max(outputs, 1)
         return class_names[predicted.item()]
 
+# Route to detect and classify the image
 @app.route('/detect_and_classify', methods=['POST'])
 def detect_and_classify():
-    file = request.files['image']
-    image_path = "tmp/input_image.jpg"
-    file.save(image_path)
+    data = request.get_json()  # Get the JSON data from the request
+    base64_image = data.get('image')  # Extract the base64 image
 
+    if not base64_image:
+        return jsonify({'error': 'No image provided'}), 400
+
+    # Decode the base64 image
+    image_data = base64.b64decode(base64_image)
+
+    # Save the decoded image to a temporary file
+    image_path = "tmp/input_image.jpg"
+    with open(image_path, 'wb') as f:
+        f.write(image_data)
+
+    # Read the image using OpenCV
     image = cv2.imread(image_path)
     height, width = image.shape[:2]
     origin = (width // 2, height)
@@ -55,6 +69,7 @@ def detect_and_classify():
     transform = T.Compose([T.ToTensor()])
     image_tensor = transform(image_rgb).unsqueeze(0)
 
+    # Perform object detection
     with torch.no_grad():
         predictions = model(image_tensor)
 
@@ -86,13 +101,13 @@ def detect_and_classify():
     predicted_class = predict(classification_model, image_tensor, class_names)
 
     response = {
-        'x': (x1 + x2) // 2,
-        'y': (y1 + y2) // 2,
+        'x': int((x1 + x2) // 2),  # Convert to int for JSON serialization
+        'y': int((y1 + y2) // 2),  # Convert to int for JSON serialization
         'predicted_class': predicted_class,
-        'confidence': closest_score
+        'confidence': float(closest_score)  # Convert to float for JSON serialization
     }
     return jsonify(response)
 
 if __name__ == '__main__':
-    # Set host to '0.0.0.0' to allow external access and use port 5000
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Start Flask app on all available IP addresses and port 5001
+    app.run(host='0.0.0.0', port=5001)
