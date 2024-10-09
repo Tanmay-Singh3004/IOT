@@ -11,6 +11,7 @@ import math
 
 app = Flask(__name__)
 
+# Load the Faster R-CNN model for object detection
 model = fasterrcnn_resnet50_fpn(weights=True)
 model.eval()
 
@@ -23,6 +24,7 @@ def load_model(model_path):
     model.eval()
     return model
 
+# Load the classification model
 classification_model = load_model('resnet50_model.pth')
 
 def preprocess_image(image_path):
@@ -92,4 +94,5 @@ def detect_and_classify():
     return jsonify(response)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Set host to '0.0.0.0' to allow external access and use port 5000
+    app.run(host='0.0.0.0', port=5000, debug=True)
